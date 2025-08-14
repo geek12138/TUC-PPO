@@ -1,5 +1,5 @@
 import torch
-from QL_Feimi import SPGG_Qlearning
+from PPO_TUC import SPGG
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
@@ -9,7 +9,7 @@ import asyncio
 import argparse
 import os
 import shutil
-import re 
+import re
 
 def save_params_to_json(params, filename_prefix="params",output_path='data'):
     # 创建参数保存目录
@@ -32,10 +32,10 @@ def save_params_to_json(params, filename_prefix="params",output_path='data'):
     with open(filepath, 'w') as f:
         json.dump(serializable_params, f, indent=4)
     
-    src_file='main_QL.py'
+    src_file='main_PPO_TUC.py'
     dst_file=f'{output_path}/{src_file}'
     shutil.copy2(src_file, dst_file)
-    src_file='QL_Feimi.py'
+    src_file='PPO_TUC.py'
     dst_file=f'{output_path}/{src_file}'
     shutil.copy2(src_file, dst_file)
 
@@ -47,9 +47,9 @@ async def main(args):
     formatted_time = current_time.strftime("%Y_%m_%d_%H%M%S")
     # 实验参数设置
     fontsize=16
-    r_values = [4.7]#[4.5,4.6,4.7,4.8,4.9,5.0,5.1]#[3.6, 3.8, 4.7, 5.0, 5.5, 6.0] #[3.0, 5.0, 7.0, 9.0]  # 公共物品乘数
+    # r_values = [3.0, 3.5] #[4.5,4.6,4.7,4.8,4.9,5.0,5.1,5.2]#[4.5,4.6,4.7,4.8,4.9,5.0,5.1]#[3.6, 3.8, 4.7, 5.0, 5.5, 6.0] #[3.0, 5.0, 7.0, 9.0]  # 公共物品乘数
     # 使用 arange 生成从 1 到 6 的列表，间隔为 0.1
-    # r_values = [round(i * 0.1, 1) for i in range(30, 61)]
+    r_values = [round(i * 0.1, 1) for i in range(10, 51)]
     # print(result_list)
 
     if args.device=='cuda':
@@ -62,8 +62,9 @@ async def main(args):
         xticks=[0, 1, 10, 100, 1000, 10000]
     elif args.epochs==100000:
         xticks=[0, 1, 10, 100, 1000, 10000, 100000]
-    fra_yticks=[0.00, 0.20, 0.40, 0.60, 0.80, 1.00]
+    fra_yticks=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     profite_yticks=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
 
     # 实验参数设置
     experiment_params = {
@@ -73,21 +74,25 @@ async def main(args):
         "L_num": args.L_num,
         "alpha": args.alpha,
         "gamma": args.gamma,
-        "epsilon": args.epsilon,
+        "clip_epsilon": args.clip_epsilon,
         "question": args.question,
+        "ppo_epochs": args.ppo_epochs,
+        "batch_size": args.batch_size,
+        "gae_lambda": args.gae_lambda,
         "device": device,  # 自动转换为字符串
         "xticks": xticks,
         "fra_yticks": fra_yticks,
         "profite_yticks": profite_yticks,
-        "start_time": formatted_time
+        "start_time": formatted_time,
+        "seed": args.seed,
+        "delta": args.delta,
+        "rho": args.rho,
+        "beta": args.beta,
+        "tau": args.tau,
+        "zeta": args.zeta
     }
 
-    if args.is_QL and (not args.is_fermi):
-        output_path=f'data/QL_{formatted_time}_q{str(args.question)}_e_{args.epochs}_L_{args.L_num}_a_{args.alpha}_g_{args.gamma}_ce_{args.epsilon}_seed_{args.seed}'
-    elif (not args.is_QL) and args.is_fermi:
-        output_path=f'data/Fermi_{formatted_time}_q{str(args.question)}_e_{args.epochs}_L_{args.L_num}_a_{args.alpha}_g_{args.gamma}_ce_{args.psilon}_seed_{args.seed}'
-    else:
-        output_path=f'data/QL_Fermi_{formatted_time}_q{str(args.question)}_e_{args.epochs}_L_{args.L_num}_a_{args.alpha}_g_{args.gamma}_ce_{args.epsilon}_seed_{args.seed}'
+    output_path=f'{args.output_path}/PPO_TUC_{formatted_time}_q{str(args.question)}_e_{args.epochs}_L_{args.L_num}_a_{args.alpha}_g_{args.gamma}_ce_{args.clip_epsilon}_gl_{args.gae_lambda}_delta_{args.delta}_rho_{args.rho}_beta_{args.beta}_tau_{args.tau}_zeta_{args.zeta}_seed_{args.seed}'
     save_params_to_json(experiment_params, filename_prefix="params",output_path=output_path)
 
     # 实验循环
@@ -96,32 +101,38 @@ async def main(args):
         # 多次独立运行
         for num in range(args.runs):
             # 初始化模型
-            model = SPGG_Qlearning(
+            model = SPGG(
                 L_num=args.L_num,
                 device=device,
                 alpha=args.alpha,
                 gamma=args.gamma,
-                epsilon=args.epsilon,
+                clip_epsilon=args.clip_epsilon,
                 r=r,
-                epoches=args.epochs,
+                epochs=args.epochs,
                 now_time=formatted_time,
                 question=args.question,
-                is_QL=args.is_QL,
-                is_fermi=args.is_fermi,
-                output_path=output_path
+                ppo_epochs=args.ppo_epochs,
+                batch_size=args.batch_size,
+                gae_lambda=args.gae_lambda,
+                output_path=output_path,
+                delta=args.delta,
+                rho=args.rho,
+                beta=args.beta,
+                tau=args.tau,
+                zeta=args.zeta
             )
             print(f"Run {num+1}/{args.runs}")
             model.count = num  # 记录运行次数
             
             # 执行模拟
-            D_Y, C_Y, D_Value, C_Value, all_value = model.run(num=num)
+            D_Y, C_Y, D_Value, C_Value, all_value = model.run()
             
             # 保存实验结果
-            model.save_data('Density_D', f'Density_D_r{r}', r, num, D_Y) # Density_D（背叛者密度），保存每个时间步中选择背叛策略的个体比例
-            model.save_data('Density_C', f'Density_C_r{r}', r, num, C_Y) # Density_C（合作者密度），保存每个时间步中选择合作策略的个体比例
-            model.save_data('Value_D', f'Value_D_r{r}', r, num, D_Value) # Value_D（背叛者收益），保存每个时间步中背叛者的平均收益
-            model.save_data('Value_C', f'Value_C_r{r}', r, num, C_Value) # Value_C（合作者收益），保存每个时间步中合作者的平均收益
-            model.save_data('Total_Value', f'Total_Value_r{r}', r, num, all_value) # Total_Value（系统总收益）,保存每个时间步中整个网格的总收益
+            model.save_data('Density_D', f'Density_D_r{r}', r, D_Y) # Density_D（背叛者密度），保存每个时间步中选择背叛策略的个体比例
+            model.save_data('Density_C', f'Density_C_r{r}', r, C_Y) # Density_C（合作者密度），保存每个时间步中选择合作策略的个体比例
+            model.save_data('Value_D', f'Value_D_r{r}', r, D_Value) # Value_D（背叛者收益），保存每个时间步中背叛者的平均收益
+            model.save_data('Value_C', f'Value_C_r{r}', r, C_Value) # Value_C（合作者收益），保存每个时间步中合作者的平均收益
+            model.save_data('Total_Value', f'Total_Value_r{r}', r, all_value) # Total_Value（系统总收益）,保存每个时间步中整个网格的总收益
             
             plt.clf()
             plt.close("all")
@@ -137,12 +148,13 @@ async def main(args):
             plt.plot(D_Y, 'r-', linewidth=2, alpha=0.7, label='D')
 
             # 设置对数坐标轴
+            # plt.xscale('log')
             plt.xlim(0, None)
             plt.xscale('symlog', 
                 linthresh=1,      # 线性/对数分界
                 linscale=0.5,     # 线性区域压缩程度
                 subs=np.arange(1,10))      # 对数区间的次要刻度
-            plt.xticks(xticks, [str(x) for x in xticks], fontsize=fontsize)  # 强制显示预设刻度
+            plt.xticks(xticks, [str(x) for x in xticks], fontsize=fontsize)
             plt.yticks(fra_yticks, fontsize=fontsize)
 
             # 增强可视化效果
@@ -183,6 +195,7 @@ async def main(args):
                 lines = file.readlines()
                 if lines:  # 确保文件不为空
                     last_line = lines[-1].strip()  # 提取最后一行并去掉换行符
+                    # last_line = lines[-start_epoch].strip()
                     try:
                         y_value = float(last_line)  # 将最后一行转换为浮点数
                         y_values.append(y_value)
@@ -230,16 +243,22 @@ if __name__ == "__main__":
     parser.add_argument('-epochs', type=int, default=10000, help='Epochs')
     parser.add_argument('-runs', type=int, default=1, help='Runs')
     parser.add_argument('-L_num', type=int, default=200, help='question size')
-    parser.add_argument('-alpha', type=float, default=0.8, help='learning rate')
-    parser.add_argument('-gamma', type=float, default=0.8, help='Gamma parameter')
-    parser.add_argument('-epsilon', type=float, default=0.3, help='epsilon')
-    parser.add_argument('-question', type=int, default=2, help='question')
+    parser.add_argument('-alpha', type=float, default=1e-4, help='learning rate')
+    parser.add_argument('-gamma', type=float, default=0.99, help='Gamma parameter')
+    parser.add_argument('-clip_epsilon', type=float, default=0.2, help='Clip epsilon')
+    parser.add_argument('-question', type=int, default=1, help='question')
+    parser.add_argument('-ppo_epochs', type=int, default=1, help='PPO epochs')
+    parser.add_argument('-batch_size', type=int, default=1, help='Batch size')
+    parser.add_argument('-gae_lambda', type=float, default=0.95, help='GAE lambda')
     parser.add_argument('-device', type=str, default='cuda', help='Device')
-    parser.add_argument('-is_QL', action='store_true', default=True, help='is QL')
-    parser.add_argument('-is_not_QL', action='store_false', dest='is_QL', help='is not QL')
-    parser.add_argument('-is_fermi', action='store_true', default=True, help='is Fermi')
-    parser.add_argument('-is_not_fermi', action='store_false', dest='is_fermi', help='is not Fermi')
     parser.add_argument('-seed', type=int, default=1, help='random seed')
+    parser.add_argument('-output_path', type=str, default='data', help='output path')
+    parser.add_argument('-delta', type=float, default=0.5, help='delta')
+    parser.add_argument('-rho', type=float, default=0.01, help='rho')
+    parser.add_argument('-beta', type=float, default=1.0, help='beta')
+    parser.add_argument('-tau', type=float, default=0.5, help='tau')
+    parser.add_argument('-zeta', type=float, default=0.01, help='zeta')
+
 
     # 解析命令行参数
     args = parser.parse_args()

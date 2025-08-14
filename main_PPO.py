@@ -47,15 +47,18 @@ async def main(args):
     formatted_time = current_time.strftime("%Y_%m_%d_%H%M%S")
     # 实验参数设置
     fontsize=16
-    r_values = [5.0]#[4.5,4.6,4.7,4.8,4.9,5.0,5.1]#[3.6, 3.8, 4.7, 5.0, 5.5, 6.0] #[3.0, 5.0, 7.0, 9.0]  # 公共物品乘数
+    r_values = [4.7]#[4.5,4.6,4.7,4.8,4.9,5.0,5.1]#[3.6, 3.8, 4.7, 5.0, 5.5, 6.0] #[3.0, 5.0, 7.0, 9.0]  # 公共物品乘数
     # 使用 arange 生成从 1 到 6 的列表，间隔为 0.1
-    # r_values = [round(i * 0.1, 1) for i in range(10, 51)]
+    # r_values = [round(i * 0.1, 1) for i in range(30, 61)]
     # print(result_list)
 
     if args.device=='cuda':
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     elif args.device=='cpu':
         device = torch.device("cpu")
+    elif args.device=='mps':
+        device = torch.device("mps")
+
     if args.epochs==1000:
         xticks=[0, 1, 10, 100, 1000]
     elif args.epochs==10000:
@@ -237,7 +240,7 @@ if __name__ == "__main__":
     parser.add_argument('-epochs', type=int, default=10000, help='Epochs')
     parser.add_argument('-runs', type=int, default=1, help='Runs')
     parser.add_argument('-L_num', type=int, default=200, help='question size')
-    parser.add_argument('-alpha', type=float, default=1e-4, help='learning rate')
+    parser.add_argument('-alpha', type=float, default=1e-2, help='learning rate')
     parser.add_argument('-gamma', type=float, default=0.99, help='Gamma parameter')
     parser.add_argument('-clip_epsilon', type=float, default=0.2, help='Clip epsilon')
     parser.add_argument('-question', type=int, default=1, help='question')

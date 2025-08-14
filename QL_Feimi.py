@@ -231,13 +231,15 @@ class SPGG_Qlearning(nn.Module):
         mean_of_positive_elements = (value_tensor.to(torch.float32).sum()) / ((positive_num + negetive_num).sum())
         return mean_of_positive_elements.to("cpu")
 
-    async def shot_pic(self,type_t_matrix: tensor,i,r,profit_matrix,num):
+    async def shot_pic(self, type_t_matrix, epoch, r, profit_data,num):
+        """保存策略矩阵快照与数据文件（与原Q-learning代码相同格式）"""
         plt.clf()
         plt.close("all")
+        
         # 创建输出目录
-        img_dir = f'{self.output_path}/shot_pic/r={r}/two_type_{num}'
-        matrix_dir = f'{self.output_path}/shot_pic/r={r}/two_type_{num}/type_t_matrix'
-        profit_dir = f'{self.output_path}/shot_pic/r={r}/two_type_{num}/profit_matrix'
+        img_dir = f'{self.output_path}/shot_pic/r={r}/two_type'
+        matrix_dir = f'{self.output_path}/shot_pic/r={r}/two_type/type_t_matrix'
+        profit_dir = f'{self.output_path}/shot_pic/r={r}/two_type/profit_matrix'
         
         # img_dir.mkdir(parents=True, exist_ok=True)
         os.makedirs(img_dir, exist_ok=True)
@@ -245,48 +247,95 @@ class SPGG_Qlearning(nn.Module):
         os.makedirs(matrix_dir, exist_ok=True)
         # profit_dir.mkdir(parents=True, exist_ok=True)
         os.makedirs(profit_dir, exist_ok=True)
-        # 初始化图表和数据
-        fig = plt.figure(figsize=(8,8))
-        ax = fig.add_subplot(1, 1, 1)
-        cmap = plt.get_cmap('Set1', 2)
-        ax.axis('off')
-        # 设置 figure 的边框为黑色
-        fig.patch.set_edgecolor('black')
-        fig.patch.set_linewidth(2)  # 设置边框线宽
-        # 指定图的大小
-        #             plt.figure(figsize=(500, 500))  # 10x10的图
-        #             plt.matshow(type_t_matrix.cpu().numpy(), cmap=cmap)
-        #             plt.colorbar(ticks=[0, 1, 2], label='Color')
-        # 显示图片
-        # 定义颜色映射
-        color_map = {
-            #0设置为黑色
-            0: (0, 0, 0),  # 黑色
-            #1设置为白色
-            1: (255, 255, 255),  # 白色
-        }
-        image = np.zeros((self.L_num, self.L_num, 3), dtype=np.uint8)
-        for label, color in color_map.items():
-            image[type_t_matrix.cpu() == label] = color
 
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
-        ax.spines['bottom'].set_linewidth(3)
-        ax.spines['left'].set_linewidth(3)
-        ax.spines['top'].set_linewidth(3)
-        ax.spines['right'].set_linewidth(3)
-        plt.imshow(image,interpolation='None')
-        plt.imshow(image,interpolation='None')
-        # generated1_2_file=f'data/Origin_Fermi_Qlearning3_q{str(self.question)}_{self.now_time}/shot_pic/r={str(r)}/two_type_{str(num)}/generated1_2'
-        # self.mkdir(generated1_2_file)
-        plt.savefig(f'{img_dir}/t={i}.png', dpi=300, bbox_inches='tight', pad_inches=0)
-        plt.savefig(f'{img_dir}/t={i}.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0)
-        # self.mkdir(f'{generated1_2_file}/type_t_matrix')
-        np.savetxt(f'{matrix_dir}/r={str(r)}_epoches={str(self.epoches)}_L={str(self.L_num)}_T={str(i)}_第{str(self.count)}次实验数据.txt',type_t_matrix.cpu().numpy())
-        # self.mkdir(f'{generated1_2_file}/profit_matrix')
-        np.savetxt(f'{profit_dir}/r={str(r)}_epoches={str(self.epoches)}_L={str(self.L_num)}_T={str(i)}_第{str(self.count)}次实验数据.txt',profit_matrix.cpu().numpy())
-        plt.clf()
-        plt.close("all")
+        # =============================================
+        # 1. 保存策略矩阵图
+        # =============================================
+        # 生成策略矩阵可视化
+        fig1 = plt.figure(figsize=(8, 8))
+        ax1 = fig1.add_subplot(1, 1, 1)
+        cmap = plt.get_cmap('Set1', 2)
+        ax1.axis('off')
+        # 设置 figure 的边框为黑色
+        fig1.patch.set_edgecolor('black')
+        fig1.patch.set_linewidth(2)  # 设置边框线宽
+        
+        # 创建颜色映射（黑:背叛者，白:合作者）
+        color_map = {
+            0: [0, 0, 0],    # 黑色
+            1: [1, 1, 1]     # 白色
+        }
+        
+        # 转换为RGB图像
+        strategy_image = np.zeros((self.L_num, self.L_num, 3))
+        for label, color in color_map.items():
+            strategy_image[type_t_matrix.cpu().numpy() == label] = color
+        
+        # 绘图设置
+        ax1.imshow(strategy_image, interpolation='none')
+        ax1.axis('off')
+        for spine in ax1.spines.values():
+            spine.set_linewidth(3)
+            
+        # 保存图片
+        # plt.savefig(f'{img_dir}/t={epoch}.png', dpi=300, bbox_inches='tight', pad_inches=0)
+        fig1.savefig(f'{img_dir}/t={epoch}.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0)
+        plt.close(fig1)
+        
+        # =============================================
+        # 2. 保存收益热图
+        # =============================================
+        # 2. 处理profit数据
+        if isinstance(profit_data, tuple):
+            # 如果是元组，提取combined_reward和team_utility
+            combined_reward, _, team_utility = profit_data
+            profit_matrix = combined_reward
+        else:
+            profit_matrix = profit_data
+        
+        # 确保是张量并转移到CPU
+        if not isinstance(profit_matrix, torch.Tensor):
+            profit_matrix = torch.tensor(profit_matrix, device=self.device)
+        profit_matrix = profit_matrix.cpu().numpy()
+
+        fig2 = plt.figure(figsize=(8, 8))
+        ax2 = fig2.add_subplot(1, 1, 1)
+
+        # 绘制热图
+        vmin = 0
+        vmax = np.ceil(np.maximum(5*(r-1),4*r))
+        # profit_data = profit_matrix.cpu().numpy()
+        im = ax2.imshow(profit_matrix, vmin=vmin, vmax=vmax, cmap='viridis', interpolation='none')
+        
+        # 添加颜色条
+        
+        cbar2 = fig2.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
+        cbar2.ax.tick_params(labelsize=28)
+        # cbar2.set_ticks(np.arange(vmin, vmax, 1))
+        # cbar.set_label('Profit Value')
+        cbar2.set_ticks(np.ceil(np.linspace(vmin, vmax, 5)).astype(int))
+        
+        # 设置坐标轴
+        ax2.set_xticks(np.arange(0, self.L_num, max(1, self.L_num//5)))
+        ax2.set_yticks(np.arange(0, self.L_num, max(1, self.L_num//5)))
+        ax2.grid(False)
+
+        ax2.axis('off')
+        # 设置 figure 的边框为黑色
+        # fig2.patch.set_edgecolor('black')
+        # fig2.patch.set_linewidth(2)  # 设置边框线宽
+        
+        # 保存收益热图
+        fig2.savefig(f'{img_dir}/profit_t={epoch}.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0)
+        plt.close(fig2)
+
+        # =============================================
+        # 3. 保存矩阵数据文件
+        # =============================================
+        np.savetxt(f'{matrix_dir}/T{epoch}.txt',
+                    type_t_matrix.cpu().numpy(), fmt='%d')
+        np.savetxt(f'{profit_dir}/T{epoch}.txt',
+                    profit_matrix, fmt='%.4f')
         return 0
 
 
@@ -498,7 +547,7 @@ class SPGG_Qlearning(nn.Module):
 
             # 保存关键步的快照
             if i+1 in [1, 10, 100, 1000, 10000, 100000]:
-                asyncio.create_task(self.shot_pic(type_t_matrix, i+1, self.r, profit_matrix, num))
+                asyncio.create_task(self.shot_pic(type_t_matrix, i+1, self.r, profit_matrix,num))
             
             # Q-learning策略更新
             type_t1_matrix = self.type_matrix_change(self.epsilon, type_t_matrix, Q_matrix)

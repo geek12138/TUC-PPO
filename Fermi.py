@@ -121,7 +121,7 @@ class SPGG(nn.Module):
             
             if epoch == 0:
                 profit_matrix = self.calculate_reward(self.current_state)
-                asyncio.create_task(self.shot_pic(self.current_state, epoch, self.r, profit_matrix, num))
+                asyncio.create_task(self.shot_pic(self.current_state, epoch, self.r, profit_matrix))
                 # 计算当前指标（新增部分）
                 current_coop_rate = self.current_state.float().mean().item()  # 合作率
                 current_defect_rate = 1 - current_coop_rate  # 背叛率
@@ -137,7 +137,7 @@ class SPGG(nn.Module):
 
             if (epoch+1 in [1, 10, 100, 1000, 10000, 100000]):
                 profit_matrix = self.calculate_reward(self.current_state)
-                asyncio.create_task(self.shot_pic(self.current_state, epoch+1, self.r, profit_matrix, num))
+                asyncio.create_task(self.shot_pic(self.current_state, epoch+1, self.r, profit_matrix))
 
             # 计算当前指标（新增部分）
             current_coop_rate = self.current_state.float().mean().item()  # 合作率
@@ -174,15 +174,15 @@ class SPGG(nn.Module):
     # def mkdir(self, path):
     #     os.makedirs(path, exist_ok=True)
     
-    async def shot_pic(self, type_t_matrix, epoch, r, profit_matrix, run_num):
+    async def shot_pic(self, type_t_matrix, epoch, r, profit_data):
         """保存策略矩阵快照与数据文件（与原Q-learning代码相同格式）"""
         plt.clf()
         plt.close("all")
         
         # 创建输出目录
-        img_dir = f'{self.output_path}/shot_pic/r={r}/two_type_{run_num}'
-        matrix_dir = f'{self.output_path}/shot_pic/r={r}/two_type_{run_num}/type_t_matrix'
-        profit_dir = f'{self.output_path}/shot_pic/r={r}/two_type_{run_num}/profit_matrix'
+        img_dir = f'{self.output_path}/shot_pic/r={r}/two_type'
+        matrix_dir = f'{self.output_path}/shot_pic/r={r}/two_type/type_t_matrix'
+        profit_dir = f'{self.output_path}/shot_pic/r={r}/two_type/profit_matrix'
         
         # img_dir.mkdir(parents=True, exist_ok=True)
         os.makedirs(img_dir, exist_ok=True)
@@ -191,14 +191,17 @@ class SPGG(nn.Module):
         # profit_dir.mkdir(parents=True, exist_ok=True)
         os.makedirs(profit_dir, exist_ok=True)
 
+        # =============================================
+        # 1. 保存策略矩阵图
+        # =============================================
         # 生成策略矩阵可视化
-        fig = plt.figure(figsize=(8, 8))
-        ax = fig.add_subplot(1, 1, 1)
+        fig1 = plt.figure(figsize=(8, 8))
+        ax1 = fig1.add_subplot(1, 1, 1)
         cmap = plt.get_cmap('Set1', 2)
-        ax.axis('off')
+        ax1.axis('off')
         # 设置 figure 的边框为黑色
-        fig.patch.set_edgecolor('black')
-        fig.patch.set_linewidth(2)  # 设置边框线宽
+        fig1.patch.set_edgecolor('black')
+        fig1.patch.set_linewidth(2)  # 设置边框线宽
         
         # 创建颜色映射（黑:背叛者，白:合作者）
         color_map = {
@@ -207,24 +210,72 @@ class SPGG(nn.Module):
         }
         
         # 转换为RGB图像
-        image = np.zeros((self.L_num, self.L_num, 3))
+        strategy_image = np.zeros((self.L_num, self.L_num, 3))
         for label, color in color_map.items():
-            image[type_t_matrix.cpu().numpy() == label] = color
+            strategy_image[type_t_matrix.cpu().numpy() == label] = color
         
         # 绘图设置
-        ax.imshow(image, interpolation='none')
-        ax.axis('off')
-        for spine in ax.spines.values():
+        ax1.imshow(strategy_image, interpolation='none')
+        ax1.axis('off')
+        for spine in ax1.spines.values():
             spine.set_linewidth(3)
             
         # 保存图片
         # plt.savefig(f'{img_dir}/t={epoch}.png', dpi=300, bbox_inches='tight', pad_inches=0)
-        plt.savefig(f'{img_dir}/t={epoch}.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0)
-        plt.close()
+        fig1.savefig(f'{img_dir}/t={epoch}.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0)
+        plt.close(fig1)
         
-        # 保存矩阵数据
-        np.savetxt(f'{matrix_dir}/r{r}_epoches{self.epoches}_L{self.L_num}_T{epoch}_run{run_num}.txt',
+        # =============================================
+        # 2. 保存收益热图
+        # =============================================
+        # 2. 处理profit数据
+        if isinstance(profit_data, tuple):
+            # 如果是元组，提取combined_reward和team_utility
+            combined_reward, _, team_utility = profit_data
+            profit_matrix = combined_reward
+        else:
+            profit_matrix = profit_data
+        
+        # 确保是张量并转移到CPU
+        if not isinstance(profit_matrix, torch.Tensor):
+            profit_matrix = torch.tensor(profit_matrix, device=self.device)
+        profit_matrix = profit_matrix.cpu().numpy()
+        fig2 = plt.figure(figsize=(8, 8))
+        ax2 = fig2.add_subplot(1, 1, 1)
+
+        # 绘制热图
+        vmin = 0
+        vmax = np.ceil(np.maximum(5*(r-1),4*r))
+        # profit_data = profit_matrix.cpu().numpy()
+        im = ax2.imshow(profit_matrix, vmin=vmin, vmax=vmax, cmap='viridis', interpolation='none')
+        
+        # 添加颜色条
+        
+        cbar2 = fig2.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
+        cbar2.ax.tick_params(labelsize=28)
+        # cbar2.set_ticks(np.arange(vmin, vmax, 1))
+        # cbar.set_label('Profit Value')
+        cbar2.set_ticks(np.ceil(np.linspace(vmin, vmax, 5)).astype(int))
+        
+        # 设置坐标轴
+        ax2.set_xticks(np.arange(0, self.L_num, max(1, self.L_num//5)))
+        ax2.set_yticks(np.arange(0, self.L_num, max(1, self.L_num//5)))
+        ax2.grid(False)
+
+        ax2.axis('off')
+        # 设置 figure 的边框为黑色
+        # fig2.patch.set_edgecolor('black')
+        # fig2.patch.set_linewidth(2)  # 设置边框线宽
+        
+        # 保存收益热图
+        fig2.savefig(f'{img_dir}/profit_t={epoch}.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0)
+        plt.close(fig2)
+
+        # =============================================
+        # 3. 保存矩阵数据文件
+        # =============================================
+        np.savetxt(f'{matrix_dir}/T{epoch}.txt',
                     type_t_matrix.cpu().numpy(), fmt='%d')
-        np.savetxt(f'{profit_dir}/r{r}_epoches{self.epoches}_L{self.L_num}_T{epoch}_run{run_num}.txt',
-                    profit_matrix.cpu().numpy(), fmt='%.4f')
+        np.savetxt(f'{profit_dir}/T{epoch}.txt',
+                    profit_matrix, fmt='%.4f')
         return 0
